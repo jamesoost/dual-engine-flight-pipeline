@@ -1,9 +1,9 @@
-# Aviation Integration ETL Demo
+# Dual-Engine Flight Pipeline
 
 [![License](https://img.shields.io/badge/License-MIT-2EA043?style=for-the-badge)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org/)
 [![Engines](https://img.shields.io/badge/Engines-pandas%20%7C%20PySpark-E67E22?style=for-the-badge)](#)
-[![CI](https://img.shields.io/github/actions/workflow/status/jamesoost/aviation-integration/ci.yml?branch=main&style=for-the-badge&label=CI)](https://github.com/jamesoost/aviation-integration/actions/workflows/ci.yml)
+[![CI](https://img.shields.io/github/actions/workflow/status/jamesoost/dual-engine-flight-pipeline/ci.yml?branch=main&style=for-the-badge&label=CI)](https://github.com/jamesoost/dual-engine-flight-pipeline/actions/workflows/ci.yml)
 
 A compact ETL project that runs the same flight-data workflow with two engines:
 - pandas

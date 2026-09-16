@@ -59,7 +59,7 @@ def _transform_with_engine(selected_engine: str, records: list[dict]) -> tuple[p
 
         _validate_spark_runtime()
 
-        spark = SparkSession.builder.appName("aviation-integration").master("local[*]").getOrCreate()
+        spark = SparkSession.builder.appName("dual-engine-flight-pipeline").master("local[*]").getOrCreate()
         try:
             valid_sdf, invalid_sdf = transform_spark_records(spark, records)
             valid_df = pd.DataFrame([row.asDict(recursive=True) for row in valid_sdf.collect()])
@@ -72,20 +72,40 @@ def _transform_with_engine(selected_engine: str, records: list[dict]) -> tuple[p
     raise ValueError(f"Unsupported engine: {selected_engine}")
 
 
+def _do_extract(cfg) -> tuple[dict, str, list[dict]]:
+    payload = fetch_flights(limit=cfg.api_limit, offset=cfg.api_offset, timeout=cfg.api_timeout)
+    raw_path = save_raw_payload(payload, raw_dir=cfg.raw_dir)
+    records = normalize_flight_payload(payload)
+    return payload, raw_path, records
+
+
+def _do_transform(cfg, selected_engine: str, records: list[dict]) -> tuple[pd.DataFrame, pd.DataFrame, str, str]:
+    valid_df, invalid_df = _transform_with_engine(selected_engine, records)
+    valid_path, invalid_path = write_outputs(
+        valid_df,
+        invalid_df,
+        staging_dir=cfg.staging_dir,
+        quarantine_dir=cfg.quarantine_dir,
+    )
+    return valid_df, invalid_df, valid_path, invalid_path
+
+
+def _do_load(cfg, valid_df: pd.DataFrame) -> dict:
+    return load_sqlite(valid_df, db_path=cfg.db_path)
+
+
 def run_extract_step() -> dict:
     cfg = load_config()
     setup_logging(cfg.logs_dir)
 
-    payload = fetch_flights(limit=cfg.api_limit, offset=cfg.api_offset, timeout=cfg.api_timeout)
-    raw_path = save_raw_payload(payload, raw_dir=cfg.raw_dir)
-    record_count = len(payload.get("data", []))
+    payload, raw_path, records = _do_extract(cfg)
 
-    logging.info("Extract step complete. raw_path=%s records=%s", raw_path, record_count)
+    logging.info("Extract step complete. raw_path=%s records=%s", raw_path, len(records))
 
     return {
         "step": "extract",
         "raw_output": raw_path,
-        "records": record_count,
+        "records": len(records),
     }
 
 
@@ -100,14 +120,7 @@ def run_transform_step(engine=None, raw_path=None) -> dict:
         payload_dict = json.load(raw_file)
 
     records = normalize_flight_payload(payload_dict)
-    valid_df, invalid_df = _transform_with_engine(selected_engine, records)
-
-    valid_path, invalid_path = write_outputs(
-        valid_df,
-        invalid_df,
-        staging_dir=cfg.staging_dir,
-        quarantine_dir=cfg.quarantine_dir,
-    )
+    valid_df, invalid_df, valid_path, invalid_path = _do_transform(cfg, selected_engine, records)
 
     logging.info(
         "Transform step complete. engine=%s raw_input=%s valid=%s invalid=%s",
@@ -139,7 +152,7 @@ def run_load_step(valid_csv_path=None) -> dict:
         if field in valid_df.columns:
             valid_df[field] = pd.to_datetime(valid_df[field], errors="coerce", utc=True)
 
-    load_stats = load_sqlite(valid_df, db_path=cfg.db_path)
+    load_stats = _do_load(cfg, valid_df)
 
     logging.info("Load step complete. valid_input=%s stats=%s", source_valid_csv, load_stats)
 
@@ -155,20 +168,11 @@ def run_pipeline(engine=None):
     selected_engine = engine or cfg.engine
     setup_logging(cfg.logs_dir)
 
-    payload = fetch_flights(limit=cfg.api_limit, offset=cfg.api_offset, timeout=cfg.api_timeout)
-    raw_path = save_raw_payload(payload, raw_dir=cfg.raw_dir)
-    records = normalize_flight_payload(payload)
+    _, raw_path, records = _do_extract(cfg)
+    logging.info("Fetched %s records and saved raw file to %s", len(records), raw_path)
 
-    logging.info(f"Fetched {len(records)} records and saved raw file to {raw_path}")
-
-    valid_df, invalid_df = _transform_with_engine(selected_engine, records)
-    valid_path, invalid_path = write_outputs(
-        valid_df,
-        invalid_df,
-        staging_dir=cfg.staging_dir,
-        quarantine_dir=cfg.quarantine_dir,
-    )
-    load_stats = load_sqlite(valid_df, db_path=cfg.db_path)
+    valid_df, invalid_df, valid_path, invalid_path = _do_transform(cfg, selected_engine, records)
+    load_stats = _do_load(cfg, valid_df)
 
     logging.info(
         "Pipeline done. valid_rows=%s invalid_rows=%s valid_output=%s invalid_output=%s",

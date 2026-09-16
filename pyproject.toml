@@ -3,7 +3,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "aviation-integration"
+name = "dual-engine-flight-pipeline"
 version = "0.1.0"
 description = "Small ETL pipeline for aviation flight data ingestion and processing"
 requires-python = ">=3.11"
